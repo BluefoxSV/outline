@@ -88,28 +88,40 @@ export function getTmp002Status(
 }
 
 const DECIDE_STATUSES = new Set(["in review"]);
-const HIDDEN_STATUSES = new Set([
+/** Terminal — no review actions (doc is retired). */
+const RETIRED_STATUSES = new Set([
+  "superseded",
+  "deprecated",
+  "archived",
+]);
+/**
+ * Published-but-editable: still allow "Request review" so editors can send a
+ * new revision after changing an Accepted page (re-review cycle).
+ */
+const REREVIEW_STATUSES = new Set([
   "accepted",
   "approved",
   "published",
   "implemented",
-  "superseded",
-  "deprecated",
-  "archived",
 ]);
 
 export function reviewActionsForStatus(status: string | null): {
   showRequest: boolean;
   showDecide: boolean;
+  isRereview: boolean;
 } {
   const s = (status || "").trim().toLowerCase();
-  if (HIDDEN_STATUSES.has(s)) {
-    return { showRequest: false, showDecide: false };
+  if (RETIRED_STATUSES.has(s)) {
+    return { showRequest: false, showDecide: false, isRereview: false };
   }
   if (DECIDE_STATUSES.has(s)) {
-    return { showRequest: false, showDecide: true };
+    return { showRequest: false, showDecide: true, isRereview: false };
   }
-  return { showRequest: true, showDecide: false };
+  if (REREVIEW_STATUSES.has(s)) {
+    return { showRequest: true, showDecide: false, isRereview: true };
+  }
+  // Draft / rejected / missing Status → first review
+  return { showRequest: true, showDecide: false, isRereview: false };
 }
 
 export function userIsRevisor(
@@ -135,14 +147,15 @@ export function reviewActionsVisible(opts: {
   canUpdate: boolean;
   canComment: boolean;
   isRevisor: boolean;
-}): { showRequest: boolean; showDecide: boolean } {
+}): { showRequest: boolean; showDecide: boolean; isRereview: boolean } {
   const byStatus = reviewActionsForStatus(opts.status);
   if (!opts.canComment) {
-    return { showRequest: false, showDecide: false };
+    return { showRequest: false, showDecide: false, isRereview: false };
   }
   return {
     showRequest: byStatus.showRequest && opts.canUpdate,
     showDecide: byStatus.showDecide && opts.isRevisor,
+    isRereview: byStatus.isRereview,
   };
 }
 
@@ -188,7 +201,7 @@ function BluefoxReviewActions({ document }: Props) {
 
   const status = statusOverride || liveStatus;
   const isRevisor = userIsRevisor(user, groups, groupUsers);
-  const { showRequest, showDecide } = reviewActionsVisible({
+  const { showRequest, showDecide, isRereview } = reviewActionsVisible({
     status,
     canUpdate: !!can.update,
     canComment: !!can.comment,
@@ -203,27 +216,31 @@ function BluefoxReviewActions({ document }: Props) {
       setBusy(true);
       const cmd = command.trim().replace(/^\//, "");
       const expected = expectedStatusForCommand(cmd);
-      if (expected) {
-        setStatusOverride(expected);
-      }
       try {
-        await client.post("/bluefox.review", {
+        // Do not optimistic-hide buttons before the server confirms — that made
+        // Accepted→In review feel like a no-op and users clicked twice.
+        const res = await client.post("/bluefox.review", {
           id: document.id,
           command: cmd,
           reason,
         });
-        for (let i = 0; i < 8; i++) {
+        const remoteStatus =
+          (res?.data?.status as string | undefined)?.toLowerCase() || expected;
+        if (remoteStatus) {
+          setStatusOverride(remoteStatus);
+        }
+        for (let i = 0; i < 10; i++) {
           try {
             await documents.fetch(document.id, { force: true });
           } catch {
             /* ignore */
           }
           const st = getTmp002Status(document.data);
-          if (expected && st === expected) {
+          if (remoteStatus && st === remoteStatus) {
             setStatusOverride(null);
             break;
           }
-          await sleep(400);
+          await sleep(500);
         }
         toast.success(t("Review applied"));
       } catch (err) {
@@ -266,18 +283,22 @@ function BluefoxReviewActions({ document }: Props) {
     return null;
   }
 
+  const requestLabel = isRereview
+    ? t("Request re-review")
+    : t("Request review");
+
   return (
     <>
       {showRequest && (
         <Action>
-          <Tooltip content={t("Request review")} placement="bottom">
+          <Tooltip content={requestLabel} placement="bottom">
             <Button
               onClick={handleRequestReview}
               disabled={busy}
               icon={<PadlockIcon />}
               neutral
             >
-              {t("Request review")}
+              {requestLabel}
             </Button>
           </Tooltip>
         </Action>

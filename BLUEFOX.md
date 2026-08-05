@@ -14,8 +14,9 @@ Visibility = TMP-002 `Status` × role (parity with `outline_export_webhook.py`):
 | Status | Role | Buttons | Server command |
 |--------|------|---------|----------------|
 | Draft / rejected / missing | Editor (`can.update`) | Request review | `revision` |
+| Accepted / published / … | Editor (`can.update`) | Request **re-review** | `revision` |
 | In review | Outline group **Revisores** | Approve, Reject | `aprobar`, `rechazar` + reason |
-| Accepted (and terminal) | any | — | — |
+| Superseded / deprecated / archived | any | — | — |
 | any | Lector (no comment/update) | — | — |
 
 Non-revisors never see Approve/Reject (escribano would reject anyway).

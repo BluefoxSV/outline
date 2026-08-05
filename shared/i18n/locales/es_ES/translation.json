@@ -1143,6 +1143,7 @@
   "{{ user }} created {{ timeAgo }}": "{{ user }} lo creó {{ timeAgo }}",
   "Uploading": "Subiendo",
   "Request review": "Solicitar revisión",
+  "Request re-review": "Solicitar re-revisión",
   "Approve document": "Aprobar (Revisor)",
   "Reject document": "Rechazar con razón",
   "Approve": "Aprobar",
