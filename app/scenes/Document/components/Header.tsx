@@ -48,6 +48,7 @@ import { documentEditPath } from "~/utils/routeHelpers";
 import ObservingBanner from "./ObservingBanner";
 import PublicBreadcrumb from "./PublicBreadcrumb";
 import ShareButton from "./ShareButton";
+import BluefoxReviewActions from "./BluefoxReviewActions";
 
 type Props = {
   document: Document;
@@ -297,6 +298,9 @@ function DocumentHeader({
               <Action>
                 <ShareButton document={document} />
               </Action>
+            )}
+            {!isEditing && !isRevision && !isShare && (
+              <BluefoxReviewActions document={document} />
             )}
             {(isEditing || isTemplateEditable) && (
               <Action>

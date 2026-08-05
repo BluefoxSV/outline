@@ -1141,5 +1141,12 @@
   "{{ user }} updated {{ timeAgo }}": "{{ user }} updated {{ timeAgo }}",
   "You created {{ timeAgo }}": "You created {{ timeAgo }}",
   "{{ user }} created {{ timeAgo }}": "{{ user }} created {{ timeAgo }}",
-  "Uploading": "Uploading"
+  "Uploading": "Uploading",
+  "Request review": "Request review",
+  "Approve document": "Approve (Revisor)",
+  "Reject document": "Reject with reason",
+  "Approve": "Approve",
+  "Reject": "Reject",
+  "Review command sent": "Sent to escribano — Status updates in a few seconds",
+  "Reason for rejection (required)": "Reason for rejection (required)"
 }

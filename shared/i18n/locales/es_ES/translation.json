@@ -1141,5 +1141,12 @@
   "{{ user }} updated {{ timeAgo }}": "{{ user }} lo actualizó {{ timeAgo }}",
   "You created {{ timeAgo }}": "Tú lo creaste {{ timeAgo }}",
   "{{ user }} created {{ timeAgo }}": "{{ user }} lo creó {{ timeAgo }}",
-  "Uploading": "Subiendo"
+  "Uploading": "Subiendo",
+  "Request review": "Solicitar revisión",
+  "Approve document": "Aprobar (Revisor)",
+  "Reject document": "Rechazar con razón",
+  "Approve": "Aprobar",
+  "Reject": "Rechazar",
+  "Review command sent": "Enviado al escribano — el Status se actualiza en segundos",
+  "Reason for rejection (required)": "Razón del rechazo (obligatoria)"
 }
