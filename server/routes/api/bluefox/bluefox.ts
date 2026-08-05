@@ -1,6 +1,5 @@
 /**
- * Bluefox: native TMP-002 review actions without ChatOps comments.
- * Proxies to in-cluster escribano POST /review.
+ * Bluefox: native TMP-002 review + bluefoxMeta (internal document metadata).
  */
 import Router from "koa-router";
 import { InvalidRequestError } from "@server/errors";
@@ -14,6 +13,7 @@ import { APIContext } from "@server/types";
 import fetch from "@server/utils/fetch";
 import { RateLimiterStrategy } from "@server/utils/RateLimiter";
 import { assertPresent, assertIn } from "@server/validation";
+import type { BluefoxMeta } from "@shared/types";
 
 const router = new Router();
 
@@ -25,6 +25,112 @@ const COMMANDS = [
   "rechazar",
   "reject",
 ] as const;
+
+function normalizeStatus(status: string | undefined | null): string {
+  return (status || "").trim().toLowerCase().split("(", 1)[0].trim();
+}
+
+function statusForCommand(command: string): Partial<BluefoxMeta> {
+  const c = command.trim().toLowerCase().replace(/^\//, "");
+  const today = new Date().toISOString().slice(0, 10);
+  if (c === "revision" || c === "review") {
+    return { status: "In review" };
+  }
+  if (c === "aprobar" || c === "approve") {
+    return { status: "Accepted", approvedAt: today };
+  }
+  if (c === "rechazar" || c === "reject") {
+    return { status: "Draft" };
+  }
+  return {};
+}
+
+function mergeBluefoxMeta(
+  current: BluefoxMeta | null | undefined,
+  patch: Partial<BluefoxMeta>
+): BluefoxMeta {
+  const next: BluefoxMeta = { ...(current || {}) };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) {
+      continue;
+    }
+    (next as Record<string, string>)[k] = String(v);
+  }
+  return next;
+}
+
+router.post(
+  "bluefox.meta.update",
+  rateLimiter(RateLimiterStrategy.TwentyFivePerMinute),
+  auth(),
+  async (ctx: APIContext) => {
+    const { user } = ctx.state.auth;
+    const body = (ctx.request.body || {}) as Record<string, unknown>;
+    const documentId = String(body.id || body.documentId || "");
+    assertPresent(documentId, "id is required");
+
+    const document = await Document.findByPk(documentId, {
+      userId: user.id,
+      rejectOnEmpty: true,
+    });
+    authorize(user, "update", document);
+
+    const patch = (body.meta ||
+      body.bluefoxMeta ||
+      {}) as Record<string, unknown>;
+    const allowed: (keyof BluefoxMeta)[] = [
+      "id",
+      "title",
+      "status",
+      "version",
+      "layer",
+      "mkdocsPath",
+      "audience",
+      "owner",
+      "approvedBy",
+      "approvedAt",
+      "discussionUntil",
+      "implementBy",
+    ];
+    const clean: Partial<BluefoxMeta> = {};
+    for (const key of allowed) {
+      if (patch[key] !== undefined && patch[key] !== null) {
+        clean[key] = String(patch[key]);
+      }
+    }
+    // Map snake / TMP-002 export keys
+    const aliases: Record<string, keyof BluefoxMeta> = {
+      ID: "id",
+      Status: "status",
+      "MkDocs Path": "mkdocsPath",
+      MKDOCS_PATH: "mkdocsPath",
+      ESTADO: "status",
+      Layer: "layer",
+      Audience: "audience",
+      Owner: "owner",
+      "Approved By": "approvedBy",
+      "Approved At": "approvedAt",
+      Version: "version",
+      Title: "title",
+    };
+    for (const [from, to] of Object.entries(aliases)) {
+      if (patch[from] !== undefined && patch[from] !== null && !clean[to]) {
+        clean[to] = String(patch[from]);
+      }
+    }
+
+    document.bluefoxMeta = mergeBluefoxMeta(document.bluefoxMeta, clean);
+    await document.save({ hooks: false });
+
+    ctx.body = {
+      data: {
+        document: await presentDocument(ctx, document),
+        bluefoxMeta: document.bluefoxMeta,
+      },
+      policies: presentPolicies(user, [document]),
+    };
+  }
+);
 
 router.post(
   "bluefox.review",
@@ -82,6 +188,7 @@ router.post(
           command,
           authorId: user.id,
           reason,
+          authorName: user.name,
         }),
       });
       remote = (await res.json()) as typeof remote;
@@ -105,6 +212,25 @@ router.post(
       );
     }
 
+    // Persist Status in bluefoxMeta (SoT for UI / export); escribano may still
+    // sync the legacy TMP-002 table when present.
+    const patch = statusForCommand(command);
+    if (command === "aprobar" || command === "approve") {
+      patch.approvedBy = user.name;
+    }
+    if (remote.status) {
+      const rs = normalizeStatus(remote.status);
+      if (rs === "in review") {
+        patch.status = "In review";
+      } else if (rs === "accepted") {
+        patch.status = "Accepted";
+      } else if (rs === "draft") {
+        patch.status = "Draft";
+      }
+    }
+    document.bluefoxMeta = mergeBluefoxMeta(document.bluefoxMeta, patch);
+    await document.save({ hooks: false });
+
     const fresh = await Document.findByPk(documentId, {
       userId: user.id,
       rejectOnEmpty: true,
@@ -112,9 +238,12 @@ router.post(
 
     ctx.body = {
       data: {
-        document: presentDocument(ctx, fresh),
-        status: remote.status,
+        document: await presentDocument(ctx, fresh),
+        status: normalizeStatus(
+          fresh.bluefoxMeta?.status || remote.status || patch.status
+        ),
         message: remote.message,
+        bluefoxMeta: fresh.bluefoxMeta,
       },
       policies: presentPolicies(user, [fresh]),
     };

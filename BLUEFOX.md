@@ -4,34 +4,31 @@ Fork of [outline/outline](https://github.com/outline/outline) **v0.82.0** for Bl
 
 ## Bluefox delta
 
-Native header review buttons call **`POST /api/bluefox.review`**, which proxies
-in-cluster to escribano `POST /review` (shared secret). **No ChatOps comment** is
-created by the UI. Slash commands (`/revision`, `/aprobar`, `/rechazar`) still
-work via webhook for power users.
+### Internal metadata (`bluefoxMeta`)
 
-Visibility = TMP-002 `Status` × role (parity with `outline_export_webhook.py`):
+TMP-002 Status / MkDocs Path / ID live in `documents.bluefoxMeta` (JSONB), not as a
+visible editor table. The leading TMP-002 heading+table is **hidden** in the
+editor (`BluefoxHideTmp002`). Header shows a Status chip + review buttons.
 
-| Status | Role | Buttons | Server command |
-|--------|------|---------|----------------|
-| Draft / rejected / missing | Editor (`can.update`) | Request review | `revision` |
-| Accepted / published / … | Editor (`can.update`) | Request **re-review** | `revision` |
-| In review | Outline group **Revisores** | Approve, Reject | `aprobar`, `rechazar` + reason |
-| Superseded / deprecated / archived | any | — | — |
-| any | Lector (no comment/update) | — | — |
+- `POST /api/bluefox.meta.update` — `{ id, meta: { status, mkdocsPath, … } }`
+- `POST /api/bluefox.review` — proxies escribano and updates `bluefoxMeta.status`
 
-Non-revisors never see Approve/Reject (escribano would reject anyway).
+### Review buttons
+
+Native header review buttons call **`POST /api/bluefox.review`**. Slash ChatOps
+still works via webhook.
+
+| Status | Role | Buttons |
+|--------|------|---------|
+| Draft / missing | Editor | Request review |
+| Accepted / published | Editor | Request re-review |
+| In review | Revisores | Approve, Reject |
+| Superseded / archived | — | — |
 
 **Runtime env (GitOps):**
 
 - `BLUEFOX_ESCRIBANO_URL=http://outline-export-webhook.outline.svc:8080`
-- `BLUEFOX_REVIEW_SECRET` = same value as webhook `REVIEW_SECRET` (reuses `UTILS_SECRET` from `outline-app`)
-
-Files:
-
-- `app/scenes/Document/components/BluefoxReviewActions.tsx`
-- `server/routes/api/bluefox/bluefox.ts`
-- `app/scenes/Document/components/Header.tsx` (mount)
-- i18n `en_US` / `es_ES`
+- `BLUEFOX_REVIEW_SECRET` = webhook `REVIEW_SECRET` (reuses `UTILS_SECRET`)
 
 ## Image
 
@@ -39,18 +36,16 @@ Files:
 ghcr.io/bluefoxsv/outline:0.82.0-bfN
 ```
 
-Build (CI or local) — **single** multi-stage `Dockerfile` (do not `FROM outlinewiki/outline-base`; that pulled Hub and shipped bf1 without UI patches):
-
 ```bash
-docker build -t ghcr.io/bluefoxsv/outline:0.82.0-bf6 .
+docker build -t ghcr.io/bluefoxsv/outline:0.82.0-bf8 .
 ```
-
-`Dockerfile.base` remains for reference / upstream parity only.
 
 GitOps pin: `Platform/bluefox-gitops/platform/base/outline/deployment.yaml`
 
-## Rebase
+## Migrate existing TMP-002 tables
 
-1. Fetch upstream tag (e.g. `v0.83.0`).
-2. Re-apply Bluefox commits / this README + review bridge.
-3. Bump image tag `0.83.0-bf1` and GitOps.
+```bash
+OUTLINE_URL=… OUTLINE_API_TOKEN=… DRY_RUN=1 \
+  python3 Platform/bluefox-infra/scripts/outline-migrate-tmp002-to-meta.py
+# then drop DRY_RUN; optional STRIP_TABLE=1 to remove tables from bodies
+```

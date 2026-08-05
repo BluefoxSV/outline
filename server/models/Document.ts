@@ -44,6 +44,7 @@ import type {
   NavigationNode,
   ProsemirrorData,
   SourceMetadata,
+  BluefoxMeta,
 } from "@shared/types";
 import { ProsemirrorHelper } from "@shared/utils/ProsemirrorHelper";
 import { UrlHelper } from "@shared/utils/UrlHelper";
@@ -540,6 +541,11 @@ class Document extends ArchivableModel<
   @AllowNull
   @Column(DataType.JSONB)
   sourceMetadata: SourceMetadata | null;
+
+  /** Bluefox TMP-002-equivalent metadata (Status, Path, …) — not rendered in body. */
+  @AllowNull
+  @Column(DataType.JSONB)
+  bluefoxMeta: BluefoxMeta | null;
 
   @BelongsTo(() => Document, "parentDocumentId")
   parentDocument: Document | null;

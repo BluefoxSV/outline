@@ -1,13 +1,14 @@
 /**
- * Bluefox: native review actions via server RPC → escribano (no ChatOps comment).
- * Visibility = TMP-002 Status × role (mirrors escribano).
+ * Bluefox: review actions + Status chip from documents.bluefoxMeta.
+ * TMP-002 body table is hidden in the editor (BluefoxHideTmp002).
  */
 import { observer } from "mobx-react";
 import { CheckmarkIcon, CloseIcon, PadlockIcon } from "outline-icons";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import type { ProsemirrorData } from "@shared/types";
+import styled, { createGlobalStyle } from "styled-components";
+import type { BluefoxMeta, ProsemirrorData } from "@shared/types";
 import Document from "~/models/Document";
 import User from "~/models/User";
 import { Action } from "~/components/Actions";
@@ -30,6 +31,12 @@ type PmNode = {
   text?: string;
   content?: PmNode[];
 };
+
+const Tmp002HideStyles = createGlobalStyle`
+  .ProseMirror .bluefox-tmp002-hidden {
+    display: none !important;
+  }
+`;
 
 /** Flatten ProseMirror JSON text (no schema required). */
 export function pmNodeText(node: PmNode | undefined | null): string {
@@ -59,8 +66,7 @@ function findFirstTable(node: PmNode | undefined | null): PmNode | null {
 }
 
 /**
- * Read Status from the first TMP-002-style table in document.data.
- * Returns normalized lowercase status without parenthetical qualifiers, or null.
+ * Read Status from the first TMP-002-style table in document.data (legacy).
  */
 export function getTmp002Status(
   data: ProsemirrorData | undefined | null
@@ -87,17 +93,23 @@ export function getTmp002Status(
   return null;
 }
 
+export function getBluefoxStatus(document: Document): string | null {
+  const fromMeta = (document.bluefoxMeta?.status || "")
+    .split("(", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (fromMeta) {
+    return fromMeta;
+  }
+  return getTmp002Status(document.data);
+}
+
 const DECIDE_STATUSES = new Set(["in review"]);
-/** Terminal — no review actions (doc is retired). */
 const RETIRED_STATUSES = new Set([
   "superseded",
   "deprecated",
   "archived",
 ]);
-/**
- * Published-but-editable: still allow "Request review" so editors can send a
- * new revision after changing an Accepted page (re-review cycle).
- */
 const REREVIEW_STATUSES = new Set([
   "accepted",
   "approved",
@@ -120,7 +132,6 @@ export function reviewActionsForStatus(status: string | null): {
   if (REREVIEW_STATUSES.has(s)) {
     return { showRequest: true, showDecide: false, isRereview: true };
   }
-  // Draft / rejected / missing Status → first review
   return { showRequest: true, showDecide: false, isRereview: false };
 }
 
@@ -178,6 +189,26 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function displayStatusLabel(status: string | null): string {
+  if (!status) {
+    return "—";
+  }
+  const s = status.trim().toLowerCase();
+  if (s === "in review") {
+    return "In review";
+  }
+  if (s === "accepted") {
+    return "Accepted";
+  }
+  if (s === "draft") {
+    return "Draft";
+  }
+  return status
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function BluefoxReviewActions({ document }: Props) {
   const { t } = useTranslation();
   const { documents, groups, groupUsers } = useStores();
@@ -188,7 +219,7 @@ function BluefoxReviewActions({ document }: Props) {
     null
   );
 
-  const liveStatus = getTmp002Status(document.data);
+  const liveStatus = getBluefoxStatus(document);
   React.useEffect(() => {
     if (
       statusOverride &&
@@ -217,13 +248,15 @@ function BluefoxReviewActions({ document }: Props) {
       const cmd = command.trim().replace(/^\//, "");
       const expected = expectedStatusForCommand(cmd);
       try {
-        // Do not optimistic-hide buttons before the server confirms — that made
-        // Accepted→In review feel like a no-op and users clicked twice.
         const res = await client.post("/bluefox.review", {
           id: document.id,
           command: cmd,
           reason,
         });
+        const meta = res?.data?.bluefoxMeta as BluefoxMeta | undefined;
+        if (meta) {
+          document.bluefoxMeta = meta;
+        }
         const remoteStatus =
           (res?.data?.status as string | undefined)?.toLowerCase() || expected;
         if (remoteStatus) {
@@ -235,7 +268,7 @@ function BluefoxReviewActions({ document }: Props) {
           } catch {
             /* ignore */
           }
-          const st = getTmp002Status(document.data);
+          const st = getBluefoxStatus(document);
           if (remoteStatus && st === remoteStatus) {
             setStatusOverride(null);
             break;
@@ -279,16 +312,26 @@ function BluefoxReviewActions({ document }: Props) {
   if (document.isTemplate || document.isDeleted) {
     return null;
   }
-  if (!showRequest && !showDecide) {
-    return null;
-  }
 
   const requestLabel = isRereview
     ? t("Request re-review")
     : t("Request review");
+  const showChip = !!(status || document.bluefoxMeta);
+
+  if (!showRequest && !showDecide && !showChip) {
+    return null;
+  }
 
   return (
     <>
+      <Tmp002HideStyles />
+      {showChip && (
+        <Action>
+          <StatusChip title={document.bluefoxMeta?.mkdocsPath || undefined}>
+            {t("Status")}: {displayStatusLabel(status)}
+          </StatusChip>
+        </Action>
+      )}
       {showRequest && (
         <Action>
           <Tooltip content={requestLabel} placement="bottom">
@@ -334,5 +377,17 @@ function BluefoxReviewActions({ document }: Props) {
     </>
   );
 }
+
+const StatusChip = styled.span`
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: ${(props) => props.theme.textSecondary};
+  background: ${(props) => props.theme.backgroundSecondary};
+  white-space: nowrap;
+`;
 
 export default observer(BluefoxReviewActions);

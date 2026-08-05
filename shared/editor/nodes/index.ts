@@ -3,6 +3,7 @@ import History from "../extensions/History";
 import MaxLength from "../extensions/MaxLength";
 import Placeholder from "../extensions/Placeholder";
 import TrailingNode from "../extensions/TrailingNode";
+import BluefoxHideTmp002 from "../extensions/BluefoxHideTmp002";
 import Extension from "../lib/Extension";
 import Bold from "../marks/Bold";
 import Code from "../marks/Code";
@@ -108,6 +109,7 @@ export const richExtensions: Nodes = [
   Math,
   MathBlock,
   Mention,
+  BluefoxHideTmp002,
   // Container type nodes should be last so that key handlers are registered for content inside
   // the container nodes first.
   ...listExtensions,

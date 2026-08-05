@@ -190,6 +190,25 @@ export type SourceMetadata = {
   trial?: boolean;
 };
 
+/**
+ * Bluefox authoring metadata (TMP-002 parity) stored off-document.
+ * Status / MkDocs Path drive review buttons and Outline→Git export.
+ */
+export type BluefoxMeta = {
+  id?: string;
+  title?: string;
+  status?: string;
+  version?: string;
+  layer?: string;
+  mkdocsPath?: string;
+  audience?: string;
+  owner?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  discussionUntil?: string;
+  implementBy?: string;
+};
+
 export type CustomTheme = {
   accent: string;
   accentText: string;

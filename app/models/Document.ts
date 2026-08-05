@@ -10,6 +10,7 @@ import type {
   JSONObject,
   NavigationNode,
   ProsemirrorData,
+  BluefoxMeta,
 } from "@shared/types";
 import {
   ExportContentType,
@@ -85,6 +86,11 @@ export default class Document extends ArchivableModel implements Searchable {
     /** The name of the file this document was imported from. */
     fileName?: string;
   };
+
+  /** Bluefox TMP-002-equivalent metadata (Status, Path) — SoT for review/export. */
+  @Field
+  @observable
+  bluefoxMeta?: BluefoxMeta | null;
 
   @computed
   get searchContent(): string {

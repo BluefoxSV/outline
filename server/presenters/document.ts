@@ -95,6 +95,7 @@ async function presentDocument(
           fileName: document.sourceMetadata?.fileName,
         }
       : undefined;
+    res.bluefoxMeta = document.bluefoxMeta || undefined;
   }
 
   return res;
