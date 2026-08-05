@@ -6,6 +6,10 @@
  *   Draft / rejected / missing + can.update     → Request review
  *   In review + Outline group "Revisores"       → Approve + Reject
  *   Accepted (and terminal) / Lector            → hide
+ *
+ * After a command: drop the slash comment from the local store (server delete
+ * races with comments.create WS) and refresh document.data so buttons flip
+ * without a full page reload.
  */
 import { observer } from "mobx-react";
 import { CheckmarkIcon, CloseIcon, PadlockIcon } from "outline-icons";
@@ -158,6 +162,20 @@ export function reviewActionsVisible(opts: {
   };
 }
 
+function expectedStatusForCommand(command: string): string | null {
+  const c = command.trim().split(/\s+/)[0]?.toLowerCase() || "";
+  if (c === "/revision" || c === "/review") {
+    return "in review";
+  }
+  if (c === "/aprobar" || c === "/approve") {
+    return "accepted";
+  }
+  if (c === "/rechazar" || c === "/reject") {
+    return "draft";
+  }
+  return null;
+}
+
 function pmCommand(text: string): ProsemirrorData {
   return {
     type: "doc",
@@ -170,14 +188,33 @@ function pmCommand(text: string): ProsemirrorData {
   };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function BluefoxReviewActions({ document }: Props) {
   const { t } = useTranslation();
-  const { comments, groups, groupUsers } = useStores();
+  const { comments, documents, groups, groupUsers } = useStores();
   const user = useCurrentUser({ rejectOnEmpty: false });
   const can = usePolicy(document);
   const [busy, setBusy] = React.useState(false);
+  /** Optimistic Status until documents.fetch catches escribano TMP-002 write. */
+  const [statusOverride, setStatusOverride] = React.useState<string | null>(
+    null
+  );
 
-  const status = getTmp002Status(document.data);
+  const liveStatus = getTmp002Status(document.data);
+  React.useEffect(() => {
+    if (
+      statusOverride &&
+      liveStatus &&
+      liveStatus === statusOverride.toLowerCase()
+    ) {
+      setStatusOverride(null);
+    }
+  }, [liveStatus, statusOverride]);
+
+  const status = statusOverride || liveStatus;
   const isRevisor = userIsRevisor(user, groups, groupUsers);
   const { showRequest, showDecide } = reviewActionsVisible({
     status,
@@ -204,12 +241,51 @@ function BluefoxReviewActions({ document }: Props) {
       );
       try {
         await comment.save({ documentId: document.id, data });
-        comment.isNew = false;
-        comment.createdById = user.id;
-        comment.createdBy = user;
+        // Do not leave ChatOps slash in the sidebar. Escribano deletes
+        // server-side, but comments.create WS often re-adds *after* that
+        // delete — keep scrubbing the id for a few seconds.
+        const slashId = comment.id;
+        if (slashId) {
+          comments.remove(slashId);
+        }
+
+        const expected = expectedStatusForCommand(command);
+        if (expected) {
+          setStatusOverride(expected);
+        }
+
+        // Pull TMP-002 after escribano updates (no full page reload).
+        for (let i = 0; i < 12; i++) {
+          await sleep(700);
+          if (slashId && comments.get(slashId)) {
+            comments.remove(slashId);
+          }
+          try {
+            await documents.fetch(document.id, { force: true });
+          } catch {
+            // ignore transient fetch errors while polling
+          }
+          const st = getTmp002Status(document.data);
+          if (expected && st === expected) {
+            setStatusOverride(null);
+            break;
+          }
+        }
+        if (slashId && comments.get(slashId)) {
+          comments.remove(slashId);
+        }
+
         toast.success(t("Review command sent"));
       } catch (err) {
         comment.isNew = true;
+        if (comment.id) {
+          try {
+            comments.remove(comment.id);
+          } catch {
+            /* ignore */
+          }
+        }
+        setStatusOverride(null);
         toast.error(t("Error creating comment"));
         // eslint-disable-next-line no-console
         console.error(err);
@@ -217,7 +293,7 @@ function BluefoxReviewActions({ document }: Props) {
         setBusy(false);
       }
     },
-    [busy, comments, document.id, t, user]
+    [busy, comments, document, documents, t, user]
   );
 
   const handleRequestReview = React.useCallback(() => {
