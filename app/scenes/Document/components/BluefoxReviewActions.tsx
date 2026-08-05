@@ -2,10 +2,10 @@
  * Bluefox: native review actions that emit ChatOps slash commands as comments.
  * The in-cluster escribano webhook (outline-export-webhook) transcribes TMP-002.
  *
- * Visibility follows TMP-002 Status (first Key|Value table):
- *   Draft / rejected / missing → Request review
- *   In review                  → Approve + Reject
- *   Accepted (and terminal)    → hide
+ * Visibility = TMP-002 Status × role (mirrors escribano):
+ *   Draft / rejected / missing + can.update     → Request review
+ *   In review + Outline group "Revisores"       → Approve + Reject
+ *   Accepted (and terminal) / Lector            → hide
  */
 import { observer } from "mobx-react";
 import { CheckmarkIcon, CloseIcon, PadlockIcon } from "outline-icons";
@@ -15,12 +15,16 @@ import { toast } from "sonner";
 import type { ProsemirrorData } from "@shared/types";
 import Document from "~/models/Document";
 import Comment from "~/models/Comment";
+import User from "~/models/User";
 import { Action } from "~/components/Actions";
 import Button from "~/components/Button";
 import Tooltip from "~/components/Tooltip";
 import useCurrentUser from "~/hooks/useCurrentUser";
 import usePolicy from "~/hooks/usePolicy";
 import useStores from "~/hooks/useStores";
+
+/** Same default as REVISORES_GROUP in outline_export_webhook.py */
+export const REVISORES_GROUP_NAME = "Revisores";
 
 type Props = {
   document: Document;
@@ -114,6 +118,46 @@ export function reviewActionsForStatus(status: string | null): {
   return { showRequest: true, showDecide: false };
 }
 
+/** Current user is in Outline group Revisores (auth.info groupUsers). */
+export function userIsRevisor(
+  user: User | undefined | null,
+  groups: { get: (id: string) => { name?: string } | undefined },
+  groupUsers: { orderedData: { userId: string; groupId: string }[] }
+): boolean {
+  if (!user) {
+    return false;
+  }
+  const needle = REVISORES_GROUP_NAME.toLowerCase();
+  return groupUsers.orderedData.some((gu) => {
+    if (gu.userId !== user.id) {
+      return false;
+    }
+    const name = (groups.get(gu.groupId)?.name || "").toLowerCase();
+    return name === needle;
+  });
+}
+
+/**
+ * Final button visibility: status gates ∧ role gates (escribano parity).
+ * - Request: editor with update (+ comment)
+ * - Decide: Revisores group (+ comment); not gated on can.update
+ */
+export function reviewActionsVisible(opts: {
+  status: string | null;
+  canUpdate: boolean;
+  canComment: boolean;
+  isRevisor: boolean;
+}): { showRequest: boolean; showDecide: boolean } {
+  const byStatus = reviewActionsForStatus(opts.status);
+  if (!opts.canComment) {
+    return { showRequest: false, showDecide: false };
+  }
+  return {
+    showRequest: byStatus.showRequest && opts.canUpdate,
+    showDecide: byStatus.showDecide && opts.isRevisor,
+  };
+}
+
 function pmCommand(text: string): ProsemirrorData {
   return {
     type: "doc",
@@ -128,13 +172,19 @@ function pmCommand(text: string): ProsemirrorData {
 
 function BluefoxReviewActions({ document }: Props) {
   const { t } = useTranslation();
-  const { comments } = useStores();
+  const { comments, groups, groupUsers } = useStores();
   const user = useCurrentUser({ rejectOnEmpty: false });
   const can = usePolicy(document);
   const [busy, setBusy] = React.useState(false);
 
   const status = getTmp002Status(document.data);
-  const { showRequest, showDecide } = reviewActionsForStatus(status);
+  const isRevisor = userIsRevisor(user, groups, groupUsers);
+  const { showRequest, showDecide } = reviewActionsVisible({
+    status,
+    canUpdate: !!can.update,
+    canComment: !!can.comment,
+    isRevisor,
+  });
 
   const postCommand = React.useCallback(
     async (command: string) => {
@@ -194,7 +244,7 @@ function BluefoxReviewActions({ document }: Props) {
     void postCommand(`/rechazar ${trimmed}`);
   }, [postCommand, t]);
 
-  if (!can.update || document.isTemplate || document.isDeleted) {
+  if (document.isTemplate || document.isDeleted) {
     return null;
   }
   if (!showRequest && !showDecide) {

@@ -5,13 +5,16 @@ Fork of [outline/outline](https://github.com/outline/outline) **v0.82.0** for Bl
 ## Bluefox delta
 
 Native header buttons that post ChatOps comments (escribano webhook unchanged).
-Visibility follows TMP-002 `Status` (first Key|Value table):
+Visibility = TMP-002 `Status` × role (parity with `outline_export_webhook.py`):
 
-| Status | Buttons | Comment |
-|--------|---------|---------|
-| Draft / rejected / missing | Request review | `/revision` |
-| In review | Approve, Reject | `/aprobar`, `/rechazar <reason>` |
-| Accepted (and terminal) | — | — |
+| Status | Role | Buttons | Comment |
+|--------|------|---------|---------|
+| Draft / rejected / missing | Editor (`can.update`) | Request review | `/revision` |
+| In review | Outline group **Revisores** | Approve, Reject | `/aprobar`, `/rechazar <reason>` |
+| Accepted (and terminal) | any | — | — |
+| any | Lector (no comment/update) | — | — |
+
+Non-revisors never see Approve/Reject (escribano would reject `/aprobar` anyway).
 
 Files:
 
