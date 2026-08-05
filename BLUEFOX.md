@@ -4,13 +4,14 @@ Fork of [outline/outline](https://github.com/outline/outline) **v0.82.0** for Bl
 
 ## Bluefox delta
 
-Native header buttons that post ChatOps comments (escribano webhook unchanged):
+Native header buttons that post ChatOps comments (escribano webhook unchanged).
+Visibility follows TMP-002 `Status` (first Key|Value table):
 
-| Button | Comment |
-|--------|---------|
-| Request review | `/revision` |
-| Approve | `/aprobar` |
-| Reject | `/rechazar <reason>` |
+| Status | Buttons | Comment |
+|--------|---------|---------|
+| Draft / rejected / missing | Request review | `/revision` |
+| In review | Approve, Reject | `/aprobar`, `/rechazar <reason>` |
+| Accepted (and terminal) | — | — |
 
 Files:
 
