@@ -39,6 +39,7 @@ import urls from "./urls";
 import userMemberships from "./userMemberships";
 import users from "./users";
 import views from "./views";
+import bluefox from "./bluefox/bluefox";
 
 const api = new Koa<AppState, AppContext>();
 const router = new Router();
@@ -78,6 +79,7 @@ router.use("/", documents.routes());
 router.use("/", pins.routes());
 router.use("/", revisions.routes());
 router.use("/", views.routes());
+router.use("/", bluefox.routes());
 router.use("/", apiKeys.routes());
 router.use("/", searches.routes());
 router.use("/", shares.routes());

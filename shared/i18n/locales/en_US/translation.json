@@ -1148,5 +1148,7 @@
   "Approve": "Approve",
   "Reject": "Reject",
   "Review command sent": "Sent to escribano — Status updates in a few seconds",
+  "Review applied": "Review applied — Status updates in a few seconds",
+  "Error applying review": "Could not apply review action",
   "Reason for rejection (required)": "Reason for rejection (required)"
 }

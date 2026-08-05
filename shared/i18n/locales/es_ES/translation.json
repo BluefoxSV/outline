@@ -1148,5 +1148,7 @@
   "Approve": "Aprobar",
   "Reject": "Rechazar",
   "Review command sent": "Enviado al escribano — el Status se actualiza en segundos",
+  "Review applied": "Revisión aplicada — el Status se actualiza en segundos",
+  "Error applying review": "No se pudo aplicar la acción de revisión",
   "Reason for rejection (required)": "Razón del rechazo (obligatoria)"
 }
