@@ -1,8 +1,27 @@
+# Bluefox: single multi-stage build so CI never pulls Docker Hub
+# outlinewiki/outline-base (that bug shipped 0.82.0-bf1 without UI patches).
 ARG APP_PATH=/opt/outline
-FROM outlinewiki/outline-base AS base
+
+FROM node:20-slim AS base
 
 ARG APP_PATH
 WORKDIR $APP_PATH
+COPY ./package.json ./yarn.lock ./
+COPY ./patches ./patches
+
+RUN yarn install --no-optional --frozen-lockfile --network-timeout 1000000 && \
+  yarn cache clean
+
+COPY . .
+ARG CDN_URL
+RUN yarn build
+
+RUN rm -rf node_modules
+
+RUN yarn install --production=true --frozen-lockfile --network-timeout 1000000 && \
+  yarn cache clean
+
+ENV PORT=3000
 
 # ---
 FROM node:20-slim AS runner

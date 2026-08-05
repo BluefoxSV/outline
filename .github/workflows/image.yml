@@ -1,4 +1,5 @@
 # Build and push Bluefox Outline image to GHCR.
+# Single Dockerfile multi-stage — do not FROM outlinewiki/outline-base (Hub).
 name: image
 on:
   push:
@@ -7,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image tag (e.g. 0.82.0-bf1)"
+        description: "Image tag (e.g. 0.82.0-bf2)"
         required: true
-        default: "0.82.0-bf1"
+        default: "0.82.0-bf2"
 
 permissions:
   contents: read
@@ -40,20 +41,16 @@ jobs:
           elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="0.82.0-bf1"
+            TAG="0.82.0-bf2"
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/bluefoxsv/outline:${TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Build outline-base
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile.base
-          load: true
-          tags: outlinewiki/outline-base:latest
-          cache-from: type=gha,scope=outline-base
-          cache-to: type=gha,mode=max,scope=outline-base
+      - name: Verify Bluefox UI sources before build
+        run: |
+          test -f app/scenes/Document/components/BluefoxReviewActions.tsx
+          grep -q BluefoxReviewActions app/scenes/Document/components/Header.tsx
+          grep -q '"Request review"' shared/i18n/locales/en_US/translation.json
 
       - name: Build and push outline
         uses: docker/build-push-action@v6
@@ -63,9 +60,8 @@ jobs:
           push: true
           tags: |
             ${{ steps.meta.outputs.image }}
-            ghcr.io/bluefoxsv/outline:0.82.0-bf1
-          cache-from: type=gha,scope=outline
-          cache-to: type=gha,mode=max,scope=outline
+          cache-from: type=gha,scope=outline-bf
+          cache-to: type=gha,mode=max,scope=outline-bf
 
       - name: Summary
         run: |

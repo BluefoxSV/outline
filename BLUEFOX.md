@@ -24,12 +24,13 @@ Files:
 ghcr.io/bluefoxsv/outline:0.82.0-bfN
 ```
 
-Build (CI or local):
+Build (CI or local) — **single** multi-stage `Dockerfile` (do not `FROM outlinewiki/outline-base`; that pulled Hub and shipped bf1 without UI patches):
 
 ```bash
-docker build -f Dockerfile.base -t outlinewiki/outline-base .
-docker build -t ghcr.io/bluefoxsv/outline:0.82.0-bf1 .
+docker build -t ghcr.io/bluefoxsv/outline:0.82.0-bf2 .
 ```
+
+`Dockerfile.base` remains for reference / upstream parity only.
 
 GitOps pin: `Platform/bluefox-gitops/platform/base/outline/deployment.yaml`
 
