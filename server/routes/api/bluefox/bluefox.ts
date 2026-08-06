@@ -7,6 +7,7 @@ import Logger from "@server/logging/Logger";
 import auth from "@server/middlewares/authentication";
 import { rateLimiter } from "@server/middlewares/rateLimiter";
 import { Document } from "@server/models";
+import { DocumentHelper } from "@server/models/helpers/DocumentHelper";
 import { authorize } from "@server/policies";
 import { presentDocument, presentPolicies } from "@server/presenters";
 import { APIContext } from "@server/types";
@@ -14,6 +15,7 @@ import fetch from "@server/utils/fetch";
 import { RateLimiterStrategy } from "@server/utils/RateLimiter";
 import { assertPresent, assertIn } from "@server/validation";
 import type { BluefoxMeta } from "@shared/types";
+import { bluefoxContentFingerprint } from "@shared/utils/bluefoxContentFingerprint";
 
 const router = new Router();
 
@@ -89,6 +91,7 @@ router.post(
       "owner",
       "approvedBy",
       "approvedAt",
+      "approvedContentHash",
       "discussionUntil",
       "implementBy",
     ];
@@ -217,6 +220,11 @@ router.post(
     const patch = statusForCommand(command);
     if (command === "aprobar" || command === "approve") {
       patch.approvedBy = user.name;
+      const data = await DocumentHelper.toJSON(document);
+      patch.approvedContentHash = bluefoxContentFingerprint({
+        title: document.title,
+        data,
+      });
     }
     if (remote.status) {
       const rs = normalizeStatus(remote.status);

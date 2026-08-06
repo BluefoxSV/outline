@@ -205,6 +205,8 @@ export type BluefoxMeta = {
   owner?: string;
   approvedBy?: string;
   approvedAt?: string;
+  /** FNV-1a of title+data at last Approve — gates Request re-review. */
+  approvedContentHash?: string;
   discussionUntil?: string;
   implementBy?: string;
 };

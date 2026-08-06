@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import styled, { createGlobalStyle } from "styled-components";
 import type { BluefoxMeta, ProsemirrorData } from "@shared/types";
+import { bluefoxContentFingerprint } from "@shared/utils/bluefoxContentFingerprint";
 import Document from "~/models/Document";
 import User from "~/models/User";
 import { Action } from "~/components/Actions";
@@ -24,6 +25,8 @@ export const REVISORES_GROUP_NAME = "Revisores";
 
 type Props = {
   document: Document;
+  /** Unsaved editor body vs last persisted document.data */
+  isEditorDirty?: boolean;
 };
 
 type PmNode = {
@@ -130,9 +133,27 @@ export function reviewActionsForStatus(status: string | null): {
     return { showRequest: false, showDecide: true, isRereview: false };
   }
   if (REREVIEW_STATUSES.has(s)) {
+    // Caller must gate showRequest on content changed since approve.
     return { showRequest: true, showDecide: false, isRereview: true };
   }
   return { showRequest: true, showDecide: false, isRereview: false };
+}
+
+/** True when Accepted (etc.) content differs from last approve snapshot. */
+export function contentChangedSinceApprove(
+  document: Document,
+  isEditorDirty = false
+): boolean {
+  const approved = document.bluefoxMeta?.approvedContentHash;
+  const current = bluefoxContentFingerprint({
+    title: document.title,
+    data: document.data,
+  });
+  if (!approved) {
+    // No baseline yet: only unsaved local edits count as "changed".
+    return isEditorDirty || document.isDirty();
+  }
+  return isEditorDirty || document.isDirty() || current !== approved;
 }
 
 export function userIsRevisor(
@@ -158,13 +179,19 @@ export function reviewActionsVisible(opts: {
   canUpdate: boolean;
   canComment: boolean;
   isRevisor: boolean;
+  /** When status is Accepted-like, require content change for re-review. */
+  contentChanged?: boolean;
 }): { showRequest: boolean; showDecide: boolean; isRereview: boolean } {
   const byStatus = reviewActionsForStatus(opts.status);
   if (!opts.canComment) {
     return { showRequest: false, showDecide: false, isRereview: false };
   }
+  let showRequest = byStatus.showRequest && opts.canUpdate;
+  if (showRequest && byStatus.isRereview && opts.contentChanged === false) {
+    showRequest = false;
+  }
   return {
-    showRequest: byStatus.showRequest && opts.canUpdate,
+    showRequest,
     showDecide: byStatus.showDecide && opts.isRevisor,
     isRereview: byStatus.isRereview,
   };
@@ -209,7 +236,7 @@ function displayStatusLabel(status: string | null): string {
     .join(" ");
 }
 
-function BluefoxReviewActions({ document }: Props) {
+function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
   const { t } = useTranslation();
   const { documents, groups, groupUsers } = useStores();
   const user = useCurrentUser({ rejectOnEmpty: false });
@@ -232,12 +259,60 @@ function BluefoxReviewActions({ document }: Props) {
 
   const status = statusOverride || liveStatus;
   const isRevisor = userIsRevisor(user, groups, groupUsers);
+  const contentChanged = contentChangedSinceApprove(document, isEditorDirty);
   const { showRequest, showDecide, isRereview } = reviewActionsVisible({
     status,
     canUpdate: !!can.update,
     canComment: !!can.comment,
     isRevisor,
+    contentChanged,
   });
+
+  // One-shot baseline for Accepted docs migrated before approvedContentHash.
+  React.useEffect(() => {
+    const s = (getBluefoxStatus(document) || "").trim().toLowerCase();
+    if (!REREVIEW_STATUSES.has(s)) {
+      return;
+    }
+    if (document.bluefoxMeta?.approvedContentHash) {
+      return;
+    }
+    if (!can.update || document.isDirty() || isEditorDirty) {
+      return;
+    }
+    const hash = bluefoxContentFingerprint({
+      title: document.title,
+      data: document.data,
+    });
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await client.post("/bluefox.meta.update", {
+          id: document.id,
+          meta: { approvedContentHash: hash },
+        });
+        if (cancelled) {
+          return;
+        }
+        const meta = res?.data?.bluefoxMeta as BluefoxMeta | undefined;
+        if (meta) {
+          document.bluefoxMeta = meta;
+        } else {
+          document.bluefoxMeta = {
+            ...(document.bluefoxMeta || {}),
+            approvedContentHash: hash,
+          };
+        }
+      } catch {
+        /* ignore — gating still uses isDirty() fallback */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally once per document open when hash missing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [document.id]);
 
   const postCommand = React.useCallback(
     async (command: string, reason = "") => {
@@ -256,6 +331,28 @@ function BluefoxReviewActions({ document }: Props) {
         const meta = res?.data?.bluefoxMeta as BluefoxMeta | undefined;
         if (meta) {
           document.bluefoxMeta = meta;
+        }
+        if (
+          (cmd === "aprobar" || cmd === "approve") &&
+          document.bluefoxMeta
+        ) {
+          // Align hash with client-side data (same JSON the editor uses).
+          const hash = bluefoxContentFingerprint({
+            title: document.title,
+            data: document.data,
+          });
+          document.bluefoxMeta = {
+            ...document.bluefoxMeta,
+            approvedContentHash: hash,
+          };
+          try {
+            await client.post("/bluefox.meta.update", {
+              id: document.id,
+              meta: { approvedContentHash: hash },
+            });
+          } catch {
+            /* non-fatal */
+          }
         }
         const remoteStatus =
           (res?.data?.status as string | undefined)?.toLowerCase() || expected;

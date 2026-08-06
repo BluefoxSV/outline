@@ -57,6 +57,7 @@ type Props = {
   shareId: string | null | undefined;
   isDraft: boolean;
   isEditing: boolean;
+  isEditorDirty?: boolean;
   isSaving: boolean;
   isPublishing: boolean;
   publishingIsDisabled: boolean;
@@ -74,6 +75,7 @@ function DocumentHeader({
   revision,
   shareId,
   isEditing,
+  isEditorDirty = false,
   isDraft,
   isPublishing,
   isSaving,
@@ -299,8 +301,11 @@ function DocumentHeader({
                 <ShareButton document={document} />
               </Action>
             )}
-            {!isEditing && !isRevision && !isShare && (
-              <BluefoxReviewActions document={document} />
+            {!isRevision && !isShare && (
+              <BluefoxReviewActions
+                document={document}
+                isEditorDirty={isEditorDirty}
+              />
             )}
             {(isEditing || isTemplateEditable) && (
               <Action>
