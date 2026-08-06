@@ -139,21 +139,43 @@ export function reviewActionsForStatus(status: string | null): {
   return { showRequest: true, showDecide: false, isRereview: false };
 }
 
-/** True when Accepted (etc.) content differs from last approve snapshot. */
+/** True when Accepted content diverged (edits or post-approve save). */
 export function contentChangedSinceApprove(
   document: Document,
   isEditorDirty = false
 ): boolean {
+  if (isEditorDirty || document.isDirty()) {
+    return true;
+  }
   const approved = document.bluefoxMeta?.approvedContentHash;
+  if (approved) {
+    const current = bluefoxContentFingerprint({
+      title: document.title,
+      data: document.data,
+    });
+    return current !== approved;
+  }
+  // No Approve snapshot: show re-review so post-save edits are not stuck.
+  return true;
+}
+
+/** Demote Accepted → Draft only with hard evidence (dirty or hash mismatch). */
+export function shouldDemoteAccepted(
+  document: Document,
+  isEditorDirty = false
+): boolean {
+  if (isEditorDirty || document.isDirty()) {
+    return true;
+  }
+  const approved = document.bluefoxMeta?.approvedContentHash;
+  if (!approved) {
+    return false;
+  }
   const current = bluefoxContentFingerprint({
     title: document.title,
     data: document.data,
   });
-  if (!approved) {
-    // No baseline yet: only unsaved local edits count as "changed".
-    return isEditorDirty || document.isDirty();
-  }
-  return isEditorDirty || document.isDirty() || current !== approved;
+  return current !== approved;
 }
 
 export function userIsRevisor(
@@ -268,49 +290,98 @@ function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
     contentChanged,
   });
 
-  // One-shot baseline for Accepted docs migrated before approvedContentHash.
+  // Accepted + local edits → demote to Draft (export gate + Request review).
+  const demoteLock = React.useRef(false);
+  React.useEffect(() => {
+    const s = (status || "").trim().toLowerCase();
+    if (!REREVIEW_STATUSES.has(s)) {
+      demoteLock.current = false;
+      return;
+    }
+    if (!can.update || !shouldDemoteAccepted(document, isEditorDirty)) {
+      return;
+    }
+    if (demoteLock.current || busy) {
+      return;
+    }
+    demoteLock.current = true;
+    setStatusOverride("draft");
+    void (async () => {
+      try {
+        const res = await client.post("/bluefox.meta.update", {
+          id: document.id,
+          meta: {
+            status: "Draft",
+            approvedBy: "",
+            approvedAt: "",
+            approvedContentHash: "",
+          },
+        });
+        const meta = res?.data?.bluefoxMeta as BluefoxMeta | undefined;
+        if (meta) {
+          document.bluefoxMeta = {
+            ...meta,
+            status: "Draft",
+            approvedBy: "",
+            approvedAt: "",
+            approvedContentHash: "",
+          };
+        } else {
+          document.bluefoxMeta = {
+            ...(document.bluefoxMeta || {}),
+            status: "Draft",
+            approvedBy: "",
+            approvedAt: "",
+            approvedContentHash: "",
+          };
+        }
+      } catch {
+        demoteLock.current = false;
+        setStatusOverride(null);
+      }
+    })();
+  }, [busy, can.update, document, isEditorDirty, status]);
+
+  // Accepted with hash mismatch (saved after approve) → demote once on open.
   React.useEffect(() => {
     const s = (getBluefoxStatus(document) || "").trim().toLowerCase();
-    if (!REREVIEW_STATUSES.has(s)) {
+    if (!REREVIEW_STATUSES.has(s) || !can.update) {
       return;
     }
-    if (document.bluefoxMeta?.approvedContentHash) {
+    if (!shouldDemoteAccepted(document, false)) {
       return;
     }
-    if (!can.update || document.isDirty() || isEditorDirty) {
-      return;
-    }
-    const hash = bluefoxContentFingerprint({
-      title: document.title,
-      data: document.data,
-    });
     let cancelled = false;
     void (async () => {
       try {
         const res = await client.post("/bluefox.meta.update", {
           id: document.id,
-          meta: { approvedContentHash: hash },
+          meta: {
+            status: "Draft",
+            approvedBy: "",
+            approvedAt: "",
+            approvedContentHash: "",
+          },
         });
         if (cancelled) {
           return;
         }
         const meta = res?.data?.bluefoxMeta as BluefoxMeta | undefined;
-        if (meta) {
-          document.bluefoxMeta = meta;
-        } else {
-          document.bluefoxMeta = {
-            ...(document.bluefoxMeta || {}),
-            approvedContentHash: hash,
-          };
-        }
+        document.bluefoxMeta = {
+          ...(meta || document.bluefoxMeta || {}),
+          status: "Draft",
+          approvedBy: "",
+          approvedAt: "",
+          approvedContentHash: "",
+        };
+        setStatusOverride("draft");
       } catch {
-        /* ignore — gating still uses isDirty() fallback */
+        /* ignore */
       }
     })();
     return () => {
       cancelled = true;
     };
-    // Intentionally once per document open when hash missing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [document.id]);
 
