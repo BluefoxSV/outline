@@ -16,7 +16,8 @@ export const Pagination = {
 };
 
 export const TeamPreferenceDefaults: TeamPreferences = {
-  [TeamPreference.SeamlessEdit]: true,
+  // Bluefox: read-by-default + Edit button (Outline "Separate editing").
+  [TeamPreference.SeamlessEdit]: false,
   [TeamPreference.ViewersCanExport]: true,
   [TeamPreference.MembersCanInvite]: false,
   [TeamPreference.MembersCanCreateApiKey]: true,
