@@ -139,7 +139,7 @@ export function reviewActionsForStatus(status: string | null): {
   return { showRequest: true, showDecide: false, isRereview: false };
 }
 
-/** True when Accepted content diverged (edits or post-approve save). */
+/** True when Accepted content diverged (local edits or hash mismatch). */
 export function contentChangedSinceApprove(
   document: Document,
   isEditorDirty = false
@@ -148,27 +148,8 @@ export function contentChangedSinceApprove(
     return true;
   }
   const approved = document.bluefoxMeta?.approvedContentHash;
-  if (approved) {
-    const current = bluefoxContentFingerprint({
-      title: document.title,
-      data: document.data,
-    });
-    return current !== approved;
-  }
-  // No Approve snapshot: show re-review so post-save edits are not stuck.
-  return true;
-}
-
-/** Demote Accepted → Draft only with hard evidence (dirty or hash mismatch). */
-export function shouldDemoteAccepted(
-  document: Document,
-  isEditorDirty = false
-): boolean {
-  if (isEditorDirty || document.isDirty()) {
-    return true;
-  }
-  const approved = document.bluefoxMeta?.approvedContentHash;
   if (!approved) {
+    // No snapshot yet — do not invent "changed" (that hid/broke approve UX).
     return false;
   }
   const current = bluefoxContentFingerprint({
@@ -176,6 +157,19 @@ export function shouldDemoteAccepted(
     data: document.data,
   });
   return current !== approved;
+}
+
+/**
+ * Demote Accepted → Draft only on real editor edits.
+ * Never demote on hash mismatch alone: server DocumentHelper JSON and client
+ * document.data often differ after approve/fetch, which incorrectly flipped
+ * Status back to Draft right after /aprobar.
+ */
+export function shouldDemoteAccepted(
+  _document: Document,
+  isEditorDirty = false
+): boolean {
+  return isEditorDirty;
 }
 
 export function userIsRevisor(
@@ -290,7 +284,7 @@ function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
     contentChanged,
   });
 
-  // Accepted + local edits → demote to Draft (export gate + Request review).
+  // Accepted + typing in editor → demote to Draft (export gate + Request review).
   const demoteLock = React.useRef(false);
   React.useEffect(() => {
     const s = (status || "").trim().toLowerCase();
@@ -341,49 +335,6 @@ function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
       }
     })();
   }, [busy, can.update, document, isEditorDirty, status]);
-
-  // Accepted with hash mismatch (saved after approve) → demote once on open.
-  React.useEffect(() => {
-    const s = (getBluefoxStatus(document) || "").trim().toLowerCase();
-    if (!REREVIEW_STATUSES.has(s) || !can.update) {
-      return;
-    }
-    if (!shouldDemoteAccepted(document, false)) {
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await client.post("/bluefox.meta.update", {
-          id: document.id,
-          meta: {
-            status: "Draft",
-            approvedBy: "",
-            approvedAt: "",
-            approvedContentHash: "",
-          },
-        });
-        if (cancelled) {
-          return;
-        }
-        const meta = res?.data?.bluefoxMeta as BluefoxMeta | undefined;
-        document.bluefoxMeta = {
-          ...(meta || document.bluefoxMeta || {}),
-          status: "Draft",
-          approvedBy: "",
-          approvedAt: "",
-          approvedContentHash: "",
-        };
-        setStatusOverride("draft");
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [document.id]);
 
   const postCommand = React.useCallback(
     async (command: string, reason = "") => {
