@@ -25,6 +25,8 @@ export const REVISORES_GROUP_NAME = "Revisores";
 
 type Props = {
   document: Document;
+  /** True when separate-edit mode has the editor open (not read view). */
+  isEditing?: boolean;
   /** Unsaved editor body vs last persisted document.data */
   isEditorDirty?: boolean;
 };
@@ -160,16 +162,21 @@ export function contentChangedSinceApprove(
 }
 
 /**
- * Demote Accepted → Draft only on real editor edits.
- * Never demote on hash mismatch alone: server DocumentHelper JSON and client
- * document.data often differ after approve/fetch, which incorrectly flipped
- * Status back to Draft right after /aprobar.
+ * Demote Accepted → Draft only when the author is actively editing and the
+ * editor is dirty.
+ *
+ * Never demote on hash mismatch alone (server vs client JSON differ after
+ * approve). Never demote in read view: after /aprobar the escribano may
+ * rewrite the legacy TMP-002 table (documents.update); collaborative sync
+ * then marks isEditorDirty=true even though the user did not type — that
+ * falsely flipped Status back to Draft on bf12.
  */
 export function shouldDemoteAccepted(
   _document: Document,
-  isEditorDirty = false
+  isEditorDirty = false,
+  isEditing = false
 ): boolean {
-  return isEditorDirty;
+  return isEditing && isEditorDirty;
 }
 
 export function userIsRevisor(
@@ -252,7 +259,11 @@ function displayStatusLabel(status: string | null): string {
     .join(" ");
 }
 
-function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
+function BluefoxReviewActions({
+  document,
+  isEditing = false,
+  isEditorDirty = false,
+}: Props) {
   const { t } = useTranslation();
   const { documents, groups, groupUsers } = useStores();
   const user = useCurrentUser({ rejectOnEmpty: false });
@@ -261,6 +272,8 @@ function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
   const [statusOverride, setStatusOverride] = React.useState<string | null>(
     null
   );
+  /** Skip demote after approve while escribano/table sync settles. */
+  const demoteGraceUntil = React.useRef(0);
 
   const liveStatus = getBluefoxStatus(document);
   React.useEffect(() => {
@@ -292,7 +305,13 @@ function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
       demoteLock.current = false;
       return;
     }
-    if (!can.update || !shouldDemoteAccepted(document, isEditorDirty)) {
+    if (Date.now() < demoteGraceUntil.current) {
+      return;
+    }
+    if (
+      !can.update ||
+      !shouldDemoteAccepted(document, isEditorDirty, isEditing)
+    ) {
       return;
     }
     if (demoteLock.current || busy) {
@@ -334,7 +353,7 @@ function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
         setStatusOverride(null);
       }
     })();
-  }, [busy, can.update, document, isEditorDirty, status]);
+  }, [busy, can.update, document, isEditing, isEditorDirty, status]);
 
   const postCommand = React.useCallback(
     async (command: string, reason = "") => {
@@ -358,6 +377,7 @@ function BluefoxReviewActions({ document, isEditorDirty = false }: Props) {
           (cmd === "aprobar" || cmd === "approve") &&
           document.bluefoxMeta
         ) {
+          demoteGraceUntil.current = Date.now() + 20_000;
           // Align hash with client-side data (same JSON the editor uses).
           const hash = bluefoxContentFingerprint({
             title: document.title,
