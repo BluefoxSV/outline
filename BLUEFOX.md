@@ -31,6 +31,11 @@ With **separate editing** (default): Request review / Approve / Reject are
 hidden while the editor is open — click **Done editing** first. Status chip
 stays visible.
 
+Review actions never `documents.fetch(force)` over a dirty/open editor (that
+reverted titles/body). Unsaved changes are saved first when a review command
+runs. Escribano does not rewrite document text when `bluefoxMeta` exists
+(avoids Yjs clobber via `documents.update`).
+
 | Status | Role | Buttons |
 |--------|------|---------|
 | Draft / missing | Editor | Request review |
@@ -50,7 +55,7 @@ ghcr.io/bluefoxsv/outline:0.82.0-bfN
 ```
 
 ```bash
-docker build -t ghcr.io/bluefoxsv/outline:0.82.0-bf16 .
+docker build -t ghcr.io/bluefoxsv/outline:0.82.0-bf17 .
 ```
 
 GitOps pin: `Platform/bluefox-gitops/platform/base/outline/deployment.yaml`

@@ -378,6 +378,26 @@ function BluefoxReviewActions({
       const cmd = command.trim().replace(/^\//, "");
       const expected = expectedStatusForCommand(cmd);
       try {
+        // Persist title/body before review so a later refresh cannot clobber
+        // unsaved editor state (editors lose trust when titles snap back).
+        if (isEditorDirty || isEditing) {
+          try {
+            await document.save(undefined, {
+              done: !isEditing,
+              autosave: false,
+            });
+          } catch (err) {
+            toast.error(
+              err instanceof Error && err.message
+                ? err.message
+                : t("Error applying review")
+            );
+            // eslint-disable-next-line no-console
+            console.error(err);
+            return;
+          }
+        }
+
         const res = await client.post("/bluefox.review", {
           id: document.id,
           command: cmd,
@@ -385,14 +405,17 @@ function BluefoxReviewActions({
         });
         const meta = res?.data?.bluefoxMeta as BluefoxMeta | undefined;
         if (meta) {
-          document.bluefoxMeta = meta;
+          document.bluefoxMeta = {
+            ...meta,
+            // Keep visible Outline title as meta SoT (never restore stale Title).
+            title: document.title || meta.title,
+          };
         }
         if (
           (cmd === "aprobar" || cmd === "approve") &&
           document.bluefoxMeta
         ) {
           demoteGraceUntil.current = Date.now() + 20_000;
-          // Align hash with client-side data (same JSON the editor uses).
           const hash = bluefoxContentFingerprint({
             title: document.title,
             data: document.data,
@@ -400,11 +423,24 @@ function BluefoxReviewActions({
           document.bluefoxMeta = {
             ...document.bluefoxMeta,
             approvedContentHash: hash,
+            title: document.title,
           };
           try {
             await client.post("/bluefox.meta.update", {
               id: document.id,
-              meta: { approvedContentHash: hash },
+              meta: {
+                approvedContentHash: hash,
+                title: document.title,
+              },
+            });
+          } catch {
+            /* non-fatal */
+          }
+        } else if (document.title) {
+          try {
+            await client.post("/bluefox.meta.update", {
+              id: document.id,
+              meta: { title: document.title },
             });
           } catch {
             /* non-fatal */
@@ -415,18 +451,21 @@ function BluefoxReviewActions({
         if (remoteStatus) {
           setStatusOverride(remoteStatus);
         }
-        for (let i = 0; i < 10; i++) {
-          try {
-            await documents.fetch(document.id, { force: true });
-          } catch {
-            /* ignore */
+        // Never force-refetch over an open/dirty editor — that reverts title/body.
+        if (!isEditing && !isEditorDirty) {
+          for (let i = 0; i < 10; i++) {
+            try {
+              await documents.fetch(document.id, { force: true });
+            } catch {
+              /* ignore */
+            }
+            const st = getBluefoxStatus(document);
+            if (remoteStatus && st === remoteStatus) {
+              setStatusOverride(null);
+              break;
+            }
+            await sleep(500);
           }
-          const st = getBluefoxStatus(document);
-          if (remoteStatus && st === remoteStatus) {
-            setStatusOverride(null);
-            break;
-          }
-          await sleep(500);
         }
         toast.success(t("Review applied"));
       } catch (err) {
@@ -449,7 +488,7 @@ function BluefoxReviewActions({
         setBusy(false);
       }
     },
-    [busy, document, documents, t, user]
+    [busy, document, documents, isEditing, isEditorDirty, t, user]
   );
 
   const handleRequestReview = React.useCallback(() => {
