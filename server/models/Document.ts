@@ -51,6 +51,8 @@ import { UrlHelper } from "@shared/utils/UrlHelper";
 import slugify from "@shared/utils/slugify";
 import { DocumentValidation } from "@shared/validations";
 import { ValidationError } from "@server/errors";
+import Logger from "@server/logging/Logger";
+import fetch from "@server/utils/fetch";
 import { generateUrlId } from "@server/utils/url";
 import Backlink from "./Backlink";
 import Collection from "./Collection";
@@ -1016,7 +1018,55 @@ class Document extends ArchivableModel<
     this.createdBy = user;
     this.updatedBy = user;
     this.publishedAt = null;
-    return this.save();
+
+    // Bluefox 1:1: Unpublish = demote Status → Draft and drop from MkDocs mirror.
+    const prevStatus = (this.bluefoxMeta?.status || "")
+      .trim()
+      .toLowerCase()
+      .split("(", 1)[0]
+      .trim();
+    const wasExportable = [
+      "accepted",
+      "approved",
+      "published",
+      "implemented",
+      "superseded",
+      "deprecated",
+      "archived",
+      "in review",
+    ].includes(prevStatus);
+    this.bluefoxMeta = {
+      ...(this.bluefoxMeta || {}),
+      status: "Draft",
+      approvedBy: "",
+      approvedAt: "",
+      approvedContentHash: "",
+    } as BluefoxMeta;
+    this.changed("bluefoxMeta", true);
+
+    const saved = await this.save();
+
+    if (wasExportable) {
+      const escribanoUrl = (
+        process.env.BLUEFOX_ESCRIBANO_URL || ""
+      ).replace(/\/$/, "");
+      const secret =
+        process.env.BLUEFOX_REVIEW_SECRET || process.env.UTILS_SECRET || "";
+      if (escribanoUrl && secret) {
+        void fetch(`${escribanoUrl}/export`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Bluefox-Review-Secret": secret,
+          },
+          body: JSON.stringify({ reason: "unpublish" }),
+        }).catch((err) =>
+          Logger.error("documents.unpublish export trigger failed", err as Error)
+        );
+      }
+    }
+
+    return saved;
   };
 
   // Moves a document from being visible to the team within a collection
