@@ -122,8 +122,39 @@ router.post(
       }
     }
 
+    const prevStatus = (document.bluefoxMeta?.status || "")
+      .trim()
+      .toLowerCase();
     document.bluefoxMeta = mergeBluefoxMeta(document.bluefoxMeta, clean);
+    const nextStatus = (document.bluefoxMeta?.status || "")
+      .trim()
+      .toLowerCase();
     await document.save({ hooks: false });
+
+    // Client demote Accepted → Draft: refresh MkDocs 1:1 mirror.
+    if (
+      clean.status &&
+      nextStatus === "draft" &&
+      (prevStatus === "accepted" || prevStatus === "approved")
+    ) {
+      const escribanoUrl = (
+        process.env.BLUEFOX_ESCRIBANO_URL || ""
+      ).replace(/\/$/, "");
+      const secret =
+        process.env.BLUEFOX_REVIEW_SECRET || process.env.UTILS_SECRET || "";
+      if (escribanoUrl && secret) {
+        void fetch(`${escribanoUrl}/export`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Bluefox-Review-Secret": secret,
+          },
+          body: JSON.stringify({ reason: "demote" }),
+        }).catch((err) =>
+          Logger.error("bluefox.meta.update export trigger failed", err as Error)
+        );
+      }
+    }
 
     ctx.body = {
       data: {

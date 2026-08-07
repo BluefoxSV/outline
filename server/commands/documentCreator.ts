@@ -122,6 +122,13 @@ export default async function documentCreator({
           )
         : content,
       state,
+      // Bluefox: every new doc starts as Draft in bluefoxMeta (review chip + gate).
+      // Imports may set meta later; skip seeding when this is an import row.
+      bluefoxMeta: importId
+        ? undefined
+        : {
+            status: "Draft",
+          },
     },
     {
       silent: !!createdAt,

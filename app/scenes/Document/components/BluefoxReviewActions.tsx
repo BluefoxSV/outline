@@ -106,7 +106,12 @@ export function getBluefoxStatus(document: Document): string | null {
   if (fromMeta) {
     return fromMeta;
   }
-  return getTmp002Status(document.data);
+  const fromTable = getTmp002Status(document.data);
+  if (fromTable) {
+    return fromTable;
+  }
+  // New docs / missing meta: treat as Draft for chip + review actions.
+  return "draft";
 }
 
 const DECIDE_STATUSES = new Set(["in review"]);
@@ -417,7 +422,18 @@ function BluefoxReviewActions({
         toast.success(t("Review applied"));
       } catch (err) {
         setStatusOverride(null);
-        toast.error(t("Error applying review"));
+        const detail =
+          err &&
+          typeof err === "object" &&
+          "message" in err &&
+          typeof (err as { message?: unknown }).message === "string"
+            ? (err as { message: string }).message
+            : "";
+        toast.error(
+          detail && detail.length < 200
+            ? detail
+            : t("Error applying review")
+        );
         // eslint-disable-next-line no-console
         console.error(err);
       } finally {
@@ -455,7 +471,8 @@ function BluefoxReviewActions({
   const requestLabel = isRereview
     ? t("Request re-review")
     : t("Request review");
-  const showChip = !!(status || document.bluefoxMeta);
+  // Always show Status chip (defaults to Draft via getBluefoxStatus).
+  const showChip = true;
 
   if (!showRequest && !showDecide && !showChip) {
     return null;
