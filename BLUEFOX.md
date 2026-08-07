@@ -27,6 +27,10 @@ Escribano webhook event `documents.unpublish` does the same as a backup.
 Native header review buttons call **`POST /api/bluefox.review`**. Slash ChatOps
 still works via webhook.
 
+With **separate editing** (default): Request review / Approve / Reject are
+hidden while the editor is open — click **Done editing** first. Status chip
+stays visible.
+
 | Status | Role | Buttons |
 |--------|------|---------|
 | Draft / missing | Editor | Request review |
@@ -46,7 +50,7 @@ ghcr.io/bluefoxsv/outline:0.82.0-bfN
 ```
 
 ```bash
-docker build -t ghcr.io/bluefoxsv/outline:0.82.0-bf15 .
+docker build -t ghcr.io/bluefoxsv/outline:0.82.0-bf16 .
 ```
 
 GitOps pin: `Platform/bluefox-gitops/platform/base/outline/deployment.yaml`

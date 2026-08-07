@@ -302,6 +302,13 @@ function BluefoxReviewActions({
     contentChanged,
   });
 
+  // Separate-edit mode: review buttons only in read view (after "Done editing").
+  // Always-edit teams (!separateEditMode) keep buttons available while typing.
+  const separateEdit = !!user?.separateEditMode;
+  const reviewBlockedByEdit = separateEdit && isEditing;
+  const showRequestBtn = showRequest && !reviewBlockedByEdit;
+  const showDecideBtn = showDecide && !reviewBlockedByEdit;
+
   // Accepted + typing in editor → demote to Draft (export gate + Request review).
   const demoteLock = React.useRef(false);
   React.useEffect(() => {
@@ -313,9 +320,11 @@ function BluefoxReviewActions({
     if (Date.now() < demoteGraceUntil.current) {
       return;
     }
+    // Always-edit mode: treat as editing so dirty still demotes.
+    const editingForDemote = isEditing || !separateEdit;
     if (
       !can.update ||
-      !shouldDemoteAccepted(document, isEditorDirty, isEditing)
+      !shouldDemoteAccepted(document, isEditorDirty, editingForDemote)
     ) {
       return;
     }
@@ -358,7 +367,7 @@ function BluefoxReviewActions({
         setStatusOverride(null);
       }
     })();
-  }, [busy, can.update, document, isEditing, isEditorDirty, status]);
+  }, [busy, can.update, document, isEditing, isEditorDirty, separateEdit, status]);
 
   const postCommand = React.useCallback(
     async (command: string, reason = "") => {
@@ -474,7 +483,7 @@ function BluefoxReviewActions({
   // Always show Status chip (defaults to Draft via getBluefoxStatus).
   const showChip = true;
 
-  if (!showRequest && !showDecide && !showChip) {
+  if (!showRequestBtn && !showDecideBtn && !showChip) {
     return null;
   }
 
@@ -488,7 +497,7 @@ function BluefoxReviewActions({
           </StatusChip>
         </Action>
       )}
-      {showRequest && (
+      {showRequestBtn && (
         <Action>
           <Tooltip content={requestLabel} placement="bottom">
             <Button
@@ -502,7 +511,7 @@ function BluefoxReviewActions({
           </Tooltip>
         </Action>
       )}
-      {showDecide && (
+      {showDecideBtn && (
         <>
           <Action>
             <Tooltip content={t("Approve document")} placement="bottom">

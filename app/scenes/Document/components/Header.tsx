@@ -304,7 +304,7 @@ function DocumentHeader({
             {!isRevision && !isShare && (
               <BluefoxReviewActions
                 document={document}
-                isEditing={isEditing || !user?.separateEditMode}
+                isEditing={isEditing}
                 isEditorDirty={isEditorDirty}
               />
             )}
