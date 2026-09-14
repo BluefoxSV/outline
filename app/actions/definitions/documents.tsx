@@ -533,13 +533,36 @@ export const copyDocumentLink = createAction({
   },
 });
 
+export const copyDocumentDocPath = createAction({
+  name: ({ t }) => t("Copy /doc link"),
+  section: ActiveDocumentSection,
+  keywords: "clipboard uuid mkdocs permalink",
+  icon: <CopyIcon />,
+  iconInContextMenu: false,
+  visible: ({ activeDocumentId }) => !!activeDocumentId,
+  perform: ({ stores, activeDocumentId, t }) => {
+    const document = activeDocumentId
+      ? stores.documents.get(activeDocumentId)
+      : undefined;
+    if (document) {
+      copy(`/doc/${document.id}`);
+      toast.success(t("/doc link copied to clipboard"));
+    }
+  },
+});
+
 export const copyDocument = createAction({
   name: ({ t }) => t("Copy"),
   analyticsName: "Copy document",
   section: ActiveDocumentSection,
   icon: <CopyIcon />,
   keywords: "clipboard",
-  children: [copyDocumentLink, copyDocumentShareLink, copyDocumentAsMarkdown],
+  children: [
+    copyDocumentLink,
+    copyDocumentDocPath,
+    copyDocumentShareLink,
+    copyDocumentAsMarkdown,
+  ],
 });
 
 export const duplicateDocument = createAction({
@@ -1185,6 +1208,7 @@ export const rootDocumentActions = [
   importDocument,
   downloadDocument,
   copyDocumentLink,
+  copyDocumentDocPath,
   copyDocumentShareLink,
   copyDocumentAsMarkdown,
   starDocument,

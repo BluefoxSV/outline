@@ -22,6 +22,13 @@ Native Outline Unpublish also:
 
 Escribano webhook event `documents.unpublish` does the same as a backup.
 
+### Internal `/doc/{uuid}` links (MkDocs export)
+
+- Document menu **Copy → Copy /doc link** copies `/doc/<uuid>` (stable permalink;
+  slug URLs are not rewritten by the MkDocs exporter).
+- Link toolbar (Cmd/Ctrl+K): type a document title to pick it; the href is
+  `/doc/<uuid>`. Paste a URL as before.
+
 ### Review buttons
 
 Native header review buttons call **`POST /api/bluefox.review`**. Slash ChatOps

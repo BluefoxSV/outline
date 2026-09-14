@@ -233,7 +233,7 @@ export default function SelectionToolbar(props: Props) {
     <FloatingToolbar
       active={isActive}
       ref={menuRef}
-      width={showLinkToolbar ? 336 : undefined}
+      width={showLinkToolbar ? 360 : undefined}
     >
       {showLinkToolbar ? (
         <LinkEditor
